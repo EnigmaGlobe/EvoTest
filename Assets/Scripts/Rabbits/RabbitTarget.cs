@@ -7,6 +7,15 @@ public class RabbitTarget : MonoBehaviour
 {
     public event Action<RabbitTarget> OnHit;
 
+    [Header("Runtime Meta (read-only)")]
+    [SerializeField] private string rabbitId;
+    [SerializeField] private int roundIndex;
+    [SerializeField] private float spawnElapsedSeconds;
+
+    public string RabbitId => rabbitId;
+    public int RoundIndex => roundIndex;
+    public float SpawnElapsedSeconds => spawnElapsedSeconds;
+
     [Header("NavMesh Movement")]
     [SerializeField] private NavMeshAgent agent;
     [SerializeField] private float roamRadius = 6f;
@@ -32,6 +41,20 @@ public class RabbitTarget : MonoBehaviour
     private Coroutine roamCo;
     private Coroutine debugCo;
 
+    /// <summary>
+    /// Called by spawner immediately after Instantiate to set identity.
+    /// </summary>
+    public void AssignMeta(int _roundIndex)
+    {
+        rabbitId = Guid.NewGuid().ToString("N");
+        roundIndex = _roundIndex;
+        // spawnElapsedSeconds will be set when Init() runs (needs session elapsed)
+        // but we can leave it 0 until spawner sets it if needed.
+    }
+
+    /// <summary>
+    /// Spawner calls this each spawn; we also set spawnElapsedSeconds here.
+    /// </summary>
     public void Init(Camera _cam, float _padding)
     {
         // Find agent in hierarchy (covers parent/child cases)
@@ -64,19 +87,18 @@ public class RabbitTarget : MonoBehaviour
         agent.enabled = true;
         agent.isStopped = false;
 
-        // ✅ Ensure agent drives transform
+        // Ensure agent drives transform
         agent.updatePosition = true;
         agent.updateRotation = true;
 
-        // ✅ OVERRIDE speed values (not "only if <= 0.01")
-        agent.speed = 1.2f;          // slow
-        agent.acceleration = 4f;     // smooth
-        agent.angularSpeed = 60f;    // slow turning
+        // Movement feel
+        agent.speed = 1.2f;
+        agent.acceleration = 4f;
+        agent.angularSpeed = 60f;
 
-        // ✅ Prevent “floating” due to base offset
         agent.baseOffset = 0f;
 
-        // ✅ Snap onto navmesh at correct height
+        // Snap onto navmesh
         if (NavMesh.SamplePosition(agent.transform.position, out NavMeshHit hit, 5f, NavMesh.AllAreas))
         {
             if (debugLogs)
@@ -97,6 +119,14 @@ public class RabbitTarget : MonoBehaviour
         if (debugLogs) debugCo = StartCoroutine(DebugLoop());
 
         if (debugLogs) DumpAgentState("Init()");
+    }
+
+    /// <summary>
+    /// Spawner sets this to session elapsed at spawn time so hit can compute timeFromSpawn.
+    /// </summary>
+    public void SetSpawnElapsedSeconds(float elapsed)
+    {
+        spawnElapsedSeconds = elapsed;
     }
 
     private IEnumerator RoamLoop()

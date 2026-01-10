@@ -9,17 +9,20 @@ public class RabbitSpawner : MonoBehaviour
     // Fired at the end of each round. Passes the 1-based round index.
     public System.Action<int> OnRoundEnded;
 
+    // NEW: emit FormResponse events (ExperimentController will subscribe)
+    public System.Action<FormResponse> OnFormResponse;
+
     [Header("Prefab (drag in)")]
     [SerializeField] private RabbitTarget rabbitPrefab;
 
     [Header("Session + Round Settings")]
-    [SerializeField] private float sessionDuration = 60f;   // e.g. 180f for 3 mins
-    [SerializeField] private float roundDuration = 10f;      // 10 seconds
+    [SerializeField] private float sessionDuration = 60f;
+    [SerializeField] private float roundDuration = 10f;
 
     [Header("Rabbit Count Scaling")]
-    [SerializeField] private int baseRabbitsPerRound = 3;       // minute 0
-    [SerializeField] private int rabbitsIncreasePerMinute = 2;  // + per minute
-    [SerializeField] private int maxRabbitsPerRound = 30;       // safety cap
+    [SerializeField] private int baseRabbitsPerRound = 3;
+    [SerializeField] private int rabbitsIncreasePerMinute = 2;
+    [SerializeField] private int maxRabbitsPerRound = 30;
 
     [Header("Ground + NavMesh (Terrain)")]
     [SerializeField] private float navmeshSampleRadius = 8f;
@@ -44,6 +47,13 @@ public class RabbitSpawner : MonoBehaviour
     [Header("References")]
     [SerializeField] private Camera mainCamera;
 
+    // NEW: set by ExperimentController, used for event payload
+    [Header("Logging (filled by ExperimentController)")]
+    [SerializeField] private string formId = "RabbitHunt_V1";
+    [SerializeField] private string userId = "P001";
+    [SerializeField] private string envId = "Terrain01";
+    [SerializeField] private string sessionId = "";
+
     private readonly List<RabbitTarget> alive = new List<RabbitTarget>();
     private int hits = 0;
 
@@ -55,6 +65,12 @@ public class RabbitSpawner : MonoBehaviour
     private float sessionRemaining;
     private float roundRemaining;
 
+    // NEW: round tracking
+    private int currentRoundIndex = 0;
+    private int spawnedThisRound = 0;
+    private int hitsThisRound = 0;
+    private int spawnFailsThisRound = 0;
+
     private void Awake()
     {
         if (mainCamera == null) mainCamera = Camera.main;
@@ -64,6 +80,17 @@ public class RabbitSpawner : MonoBehaviour
         sessionRemaining = sessionDuration;
         roundRemaining = roundDuration;
         UpdateTimerUI();
+    }
+
+    /// <summary>
+    /// Called by ExperimentController to configure IDs for logging.
+    /// </summary>
+    public void SetLoggingIds(string _formId, string _userId, string _envId, string _sessionId)
+    {
+        formId = _formId;
+        userId = _userId;
+        envId = _envId;
+        sessionId = _sessionId;
     }
 
     // Starts the whole session (sessionDuration) with rounds of roundDuration
@@ -96,6 +123,12 @@ public class RabbitSpawner : MonoBehaviour
         while (elapsed < sessionDuration)
         {
             roundIndex++;
+            currentRoundIndex = roundIndex;
+
+            // reset round counters
+            spawnedThisRound = 0;
+            hitsThisRound = 0;
+            spawnFailsThisRound = 0;
 
             // Rabbit scaling based on minute index
             int minuteIndex = Mathf.FloorToInt(elapsed / 60f);
@@ -105,7 +138,7 @@ public class RabbitSpawner : MonoBehaviour
             CleanupRabbits();
 
             for (int i = 0; i < rabbitsThisRound; i++)
-                SpawnOneRabbit();
+                SpawnOneRabbit(elapsed);
 
             // Round timer
             float t = 0f;
@@ -120,6 +153,9 @@ public class RabbitSpawner : MonoBehaviour
 
                 yield return null;
             }
+
+            // Emit round_end summary
+            EmitRoundEnd(elapsed, rabbitsThisRound);
 
             // End-of-round callback (your ExperimentCondition listens to this)
             OnRoundEnded?.Invoke(roundIndex);
@@ -136,18 +172,23 @@ public class RabbitSpawner : MonoBehaviour
         UpdateTimerUI(totalRounds, totalRounds);
     }
 
-    private void SpawnOneRabbit()
+    private void SpawnOneRabbit(float elapsedSeconds)
     {
         if (rabbitPrefab == null || mainCamera == null) return;
 
         if (!TryGetSpawnPos(out Vector3 pos))
         {
+            spawnFailsThisRound++;
+            EmitSpawnFail(elapsedSeconds);
             Debug.LogWarning("[Spawn] Failed to find valid spawn point on NavMesh (in view).");
             return;
         }
 
         RabbitTarget rabbit = Instantiate(rabbitPrefab, pos, Quaternion.identity);
         rabbit.gameObject.SetActive(true);
+
+        // Assign id + spawn time + round index to rabbit
+        rabbit.AssignMeta(currentRoundIndex);
 
         // Optional: ensure agent is snapped correctly if agent is on the same object
         NavMeshAgent agent = rabbit.GetComponentInParent<NavMeshAgent>();
@@ -157,17 +198,21 @@ public class RabbitSpawner : MonoBehaviour
             agent.Warp(pos);
             agent.isStopped = false;
 
-            // Defaults (RabbitTarget.Init can override these too)
             if (agent.speed <= 0.01f) agent.speed = 3.5f;
             if (agent.acceleration <= 0.01f) agent.acceleration = 8f;
 
             agent.ResetPath();
-            GiveRandomDestination(agent, pos); // ensures it moves immediately
+            GiveRandomDestination(agent, pos);
         }
 
         rabbit.Init(mainCamera, viewportPadding);
         rabbit.OnHit += HandleRabbitHit;
         alive.Add(rabbit);
+
+        spawnedThisRound++;
+
+        // Emit spawn FormResponse
+        EmitSpawn(rabbit, elapsedSeconds, pos);
     }
 
     // Picks a random reachable point on navmesh near "origin" and sets destination
@@ -273,7 +318,7 @@ public class RabbitSpawner : MonoBehaviour
                     continue;
             }
 
-            // Avoid overlaps (use agent/root position if needed)
+            // Avoid overlaps
             bool tooClose = false;
             for (int i = 0; i < alive.Count; i++)
             {
@@ -291,7 +336,7 @@ public class RabbitSpawner : MonoBehaviour
             }
             if (tooClose) continue;
 
-            // ✅ Final hard check: must be visible in camera view
+            // must be visible
             if (!IsInCameraView(snapped))
                 continue;
 
@@ -329,8 +374,18 @@ public class RabbitSpawner : MonoBehaviour
     private void HandleRabbitHit(RabbitTarget rabbit)
     {
         if (!sessionRunning) return;
+
         hits++;
+        hitsThisRound++;
         UpdateHitUI();
+
+        EmitHit(rabbit, GetElapsedSeconds());
+    }
+
+    private float GetElapsedSeconds()
+    {
+        // session elapsed = sessionDuration - sessionRemaining
+        return Mathf.Max(0f, sessionDuration - sessionRemaining);
     }
 
     private void UpdateHitUI()
@@ -373,4 +428,101 @@ public class RabbitSpawner : MonoBehaviour
 
     public float RoundDuration => roundDuration;
     public float SessionDuration => sessionDuration;
+
+    // -------------------------
+    // FormResponse emit helpers
+    // -------------------------
+
+    private void EmitSpawn(RabbitTarget rabbit, float elapsedSeconds, Vector3 worldPos)
+    {
+        if (rabbit == null || mainCamera == null) return;
+
+        Vector3 vp = mainCamera.WorldToViewportPoint(worldPos);
+        float dist = Vector3.Distance(mainCamera.transform.position, worldPos);
+
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "spawn", elapsedSeconds);
+        fr.battleId = currentRoundIndex.ToString();
+        fr.interactableId = rabbit.RabbitId;
+        fr.status = "ok";
+
+        var data = new SimpleRabbitData
+        {
+            rabbitId = rabbit.RabbitId,
+            roundIndex = currentRoundIndex,
+            eventType = "spawn",
+            x = worldPos.x,
+            y = worldPos.y,
+            z = worldPos.z,
+            vpx = vp.x,
+            vpy = vp.y,
+            vpz = vp.z,
+            distance = dist
+        };
+        fr.objectDatas.Add(JsonUtility.ToJson(data));
+
+        OnFormResponse?.Invoke(fr);
+    }
+
+    private void EmitHit(RabbitTarget rabbit, float elapsedSeconds)
+    {
+        if (rabbit == null || mainCamera == null) return;
+
+        Vector3 worldPos = rabbit.transform.position;
+        Vector3 vp = mainCamera.WorldToViewportPoint(worldPos);
+        float dist = Vector3.Distance(mainCamera.transform.position, worldPos);
+
+        float timeFromSpawn = elapsedSeconds - rabbit.SpawnElapsedSeconds;
+        if (timeFromSpawn < 0f) timeFromSpawn = 0f;
+
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "hit", elapsedSeconds);
+        fr.battleId = currentRoundIndex.ToString();
+        fr.interactableId = rabbit.RabbitId;
+        fr.isAnsCorrect = true;
+        fr.status = "ok";
+
+        var data = new SimpleRabbitData
+        {
+            rabbitId = rabbit.RabbitId,
+            roundIndex = currentRoundIndex,
+            eventType = "hit",
+            timeFromSpawn = timeFromSpawn,
+            x = worldPos.x,
+            y = worldPos.y,
+            z = worldPos.z,
+            vpx = vp.x,
+            vpy = vp.y,
+            vpz = vp.z,
+            distance = dist
+        };
+        fr.objectDatas.Add(JsonUtility.ToJson(data));
+
+        OnFormResponse?.Invoke(fr);
+    }
+
+    private void EmitSpawnFail(float elapsedSeconds)
+    {
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "spawn_fail", elapsedSeconds);
+        fr.battleId = currentRoundIndex.ToString();
+        fr.status = "failed_spawn";
+        OnFormResponse?.Invoke(fr);
+    }
+
+    private void EmitRoundEnd(float elapsedSeconds, int rabbitsPlannedThisRound)
+    {
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "round_end", elapsedSeconds);
+        fr.battleId = currentRoundIndex.ToString();
+        fr.status = "ok";
+
+        var summary = new RoundSummaryData
+        {
+            roundIndex = currentRoundIndex,
+            rabbitsPlanned = rabbitsPlannedThisRound,
+            rabbitsSpawned = spawnedThisRound,
+            rabbitsHit = hitsThisRound,
+            spawnFails = spawnFailsThisRound
+        };
+        fr.objectDatas.Add(JsonUtility.ToJson(summary));
+
+        OnFormResponse?.Invoke(fr);
+    }
 }
