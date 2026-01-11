@@ -49,12 +49,17 @@ public class RabbitSpawner : MonoBehaviour
 
     // NEW: set by ExperimentController, used for event payload
     [Header("Logging (filled by ExperimentController)")]
-    [SerializeField] private string formId = "RabbitHunt_V1";
-    [SerializeField] private string userId = "P001";
-    [SerializeField] private string envId = "Terrain01";
-    [SerializeField] private string sessionId = "";
-    [SerializeField] private string dialogueId = null;
- 
+    [SerializeField] private string formId;
+    [SerializeField] private string userId;
+    [SerializeField] private string sessionId;
+    [SerializeField] private string dialogueId;
+    [SerializeField] private string envId;
+
+    // Track elapsed so respawns log correct time without resetting session
+    private float sessionElapsedSeconds = 0f;
+
+    // Keep the current round's intended rabbit count so we can respawn same amount
+    private int rabbitsPlannedThisRound = 0;
 
     private readonly List<RabbitTarget> alive = new List<RabbitTarget>();
     private int hits = 0;
@@ -98,6 +103,14 @@ public class RabbitSpawner : MonoBehaviour
     // Starts the whole session (sessionDuration) with rounds of roundDuration
     public void StartRound()
     {
+        // ✅ If already running, DO NOT restart session — just respawn current round rabbits
+        if (sessionRunning)
+        {
+            RespawnCurrentRoundRabbits();
+            return;
+        }
+
+        // Otherwise start the whole session (your original behavior)
         if (sessionCo != null) StopCoroutine(sessionCo);
 
         CleanupRabbits();
@@ -107,13 +120,40 @@ public class RabbitSpawner : MonoBehaviour
 
         sessionRemaining = sessionDuration;
         roundRemaining = roundDuration;
+        sessionElapsedSeconds = 0f;
+
         UpdateTimerUI();
 
         sessionCo = StartCoroutine(SessionRoutine());
     }
 
+    private void RespawnCurrentRoundRabbits()
+    {
+        if (rabbitPrefab == null || mainCamera == null) return;
+
+        // If we're somehow called before the first round sets this, estimate quickly
+        int count = rabbitsPlannedThisRound;
+        if (count <= 0)
+            count = Mathf.Clamp(baseRabbitsPerRound, 0, maxRabbitsPerRound);
+
+        CleanupRabbits();
+
+        // Optional: reset only spawn counters for this new set
+        spawnedThisRound = 0;
+        // keep hitsThisRound as-is (so players don't lose hits)
+        // spawnFailsThisRound = 0; // reset if you prefer
+
+        float elapsed = sessionElapsedSeconds;
+
+        for (int i = 0; i < count; i++)
+            SpawnOneRabbit(elapsed);
+    }
+
+
+
     private IEnumerator SessionRoutine()
     {
+        
         sessionRunning = true;
 
         float elapsed = 0f;
@@ -136,7 +176,8 @@ public class RabbitSpawner : MonoBehaviour
             int minuteIndex = Mathf.FloorToInt(elapsed / 60f);
             int rabbitsThisRound = baseRabbitsPerRound + minuteIndex * rabbitsIncreasePerMinute;
             rabbitsThisRound = Mathf.Clamp(rabbitsThisRound, 0, maxRabbitsPerRound);
-
+            rabbitsThisRound = Mathf.Clamp(rabbitsThisRound, 0, maxRabbitsPerRound);
+            rabbitsPlannedThisRound = rabbitsThisRound; // ✅ remember planned count this round
             CleanupRabbits();
 
             for (int i = 0; i < rabbitsThisRound; i++)
@@ -148,6 +189,8 @@ public class RabbitSpawner : MonoBehaviour
             {
                 t += Time.deltaTime;
                 elapsed += Time.deltaTime;
+
+                sessionElapsedSeconds = elapsed; // ✅ keep for respawn timestamps
 
                 sessionRemaining = Mathf.Max(0f, sessionDuration - elapsed);
                 roundRemaining = Mathf.Max(0f, roundDuration - t);
@@ -229,6 +272,10 @@ public class RabbitSpawner : MonoBehaviour
 
             if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, navmeshSampleRadius, NavMesh.AllAreas))
             {
+                // ✅ keep movement destination on-screen
+                if (!IsInCameraView(hit.position))
+                    continue;
+
                 NavMeshPath path = new NavMeshPath();
                 if (agent.CalculatePath(hit.position, path) && path.status == NavMeshPathStatus.PathComplete)
                 {
@@ -238,6 +285,7 @@ public class RabbitSpawner : MonoBehaviour
             }
         }
     }
+
 
     // Periodically nudges agents that are idle/stuck
     private IEnumerator StuckFixerRoutine()

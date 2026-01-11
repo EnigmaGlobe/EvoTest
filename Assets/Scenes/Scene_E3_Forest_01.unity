@@ -537,7 +537,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 568716208}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5aec0d4dff1a640f1b51b8f0c1d6551e, type: 3}
   m_Name: 
@@ -551,7 +551,7 @@ MonoBehaviour:
   - 0.3
   - -0.3
   greenTintStrength: 0.4
-  toggleKey: 19
+  toggleKey: 1
 --- !u!4 &568716210
 Transform:
   m_ObjectHideFlags: 0
@@ -1242,12 +1242,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 840335160}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.39765, y: 1.20105, z: 0.04997}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -21.12908, y: 1.0574, z: -19.95069}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 1102625259}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &864774076
 GameObject:
@@ -2248,9 +2248,9 @@ MonoBehaviour:
   mainCamera: {fileID: 0}
   formId: RabbitHunt_V1
   userId: P001
-  envId: Terrain01
   sessionId: 
   dialogueId: 
+  envId: Terrain01
 --- !u!4 &1102625259
 Transform:
   m_ObjectHideFlags: 0
@@ -2265,6 +2265,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1353941023}
+  - {fileID: 840335163}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1102625260
@@ -2288,10 +2289,10 @@ MonoBehaviour:
   - 3
   - -3
   greenTintStrength: 0.4
-  toggleKey: 19
+  toggleKey: 1
   formId: RabbitHunt_V1
   dialogueId: 
-  dialogueIdText: {fileID: 0}
+  dialogueIdText: {fileID: 1528718655}
   responses: []
 --- !u!1001 &1108425485
 PrefabInstance:
@@ -2617,7 +2618,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Start
+  m_text: Spawn
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -3467,7 +3468,7 @@ GameObject:
   - component: {fileID: 1528718656}
   - component: {fileID: 1528718655}
   m_Layer: 5
-  m_Name: Text (TMP)
+  m_Name: envId Text (TMP)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -5639,7 +5640,6 @@ SceneRoots:
   - {fileID: 1866966360}
   - {fileID: 1159939154}
   - {fileID: 1112406063}
-  - {fileID: 840335163}
   - {fileID: 1026129418}
   - {fileID: 708606613}
   - {fileID: 568716210}

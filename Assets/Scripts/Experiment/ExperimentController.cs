@@ -83,6 +83,18 @@ public class ExperimentController : MonoBehaviour
         // Start in baseline
         ApplyBaseline();
         Debug.Log("[ExperimentController] Started BASELINE. Press E to toggle.");
+
+        //first time is trial.
+        if (rc != null)
+        {
+            string envToLog = string.IsNullOrEmpty(LoginController.Instance.envId)
+                ? "TRIAL"
+                : LoginController.Instance.envId;
+
+            dialogueIdText.text = envToLog;
+            rc.SetLoggingIds(formId, dialogueId, LoginController.Instance.userId, envToLog);
+
+        }
     }
 
     private void Update()
@@ -130,7 +142,7 @@ public class ExperimentController : MonoBehaviour
                 .Replace("\u200D", "")
                 .Replace("\uFEFF", "")
                 .Trim();
-            
+
             // Use dialogue category as dialogueId
             string code = d.category;
             dialogueIdText.text = code;
