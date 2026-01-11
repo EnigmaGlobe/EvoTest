@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -26,12 +28,9 @@ public class ExperimentController : MonoBehaviour
     public Key toggleKey = Key.E;
 
     [Header("Logging IDs")]
-    public string formId = "RabbitHunt_V1";
-    public string userId = "P001";
-    public string envId = "Terrain01";
-
-    [Tooltip("Auto-generated on Start if empty")]
-    public string sessionId = "";
+    public string formId = null;
+    public string dialogueId = null;
+    public TMP_Text dialogueIdText;
 
     [Header("Captured FormResponses (view in Inspector)")]
     [SerializeField] private List<FormResponse> responses = new List<FormResponse>();
@@ -77,13 +76,6 @@ public class ExperimentController : MonoBehaviour
             return;
         }
 
-        if (string.IsNullOrEmpty(sessionId))
-            sessionId = Guid.NewGuid().ToString("N");
-
-        // Send IDs down to spawner so it can fill FormResponses
-        if (rc != null)
-            rc.SetLoggingIds(formId, userId, envId, sessionId);
-
         // Start at tint step 0
         tintIndex = 0;
         ApplyTintStep(tintIndex);
@@ -110,15 +102,73 @@ public class ExperimentController : MonoBehaviour
         }
     }
 
+    public bool TryGetRandomGreenTint(out float tint)
+    {
+        tint = 0f;
+        List<Dialogue> dialogues = LoginController.Instance.dialogues;
+
+        if (dialogues == null || dialogues.Count == 0)
+            return false;
+
+        // Try a few random picks to avoid null/empty entries
+        const int maxTries = 20;
+
+        for (int t = 0; t < maxTries; t++)
+        {
+            var d = dialogues[UnityEngine.Random.Range(0, dialogues.Count)];
+            if (d?.formItemDatas == null || d.formItemDatas.Length == 0)
+                continue;
+
+            var fi = d.formItemDatas[0];
+            if (fi == null || string.IsNullOrWhiteSpace(fi.answer1))
+                continue;
+
+            // Remove invisible chars just in case, then parse as float
+            var s = fi.answer1
+                .Replace("\u200B", "")
+                .Replace("\u200C", "")
+                .Replace("\u200D", "")
+                .Replace("\uFEFF", "")
+                .Trim();
+            
+            // Use dialogue category as dialogueId
+            string code = d.category;
+            dialogueIdText.text = code;
+            dialogueId = code;
+            // Parse with invariant culture so "0.3" works regardless of locale
+            if (float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out tint))
+                return true;
+        }
+
+        return false;
+    }
+
     private void HandleRoundEnded(int roundIndex)
     {
         if (e3Material == null) return;
+
+        // Try to get tint from server dialogues
+        if (TryGetRandomGreenTint(out var tint))
+        {
+            e3Material.SetFloat(GreentintID, tint);
+            e3Material.SetFloat(GreenTintStrengthID, greenTintStrength);
+
+            Debug.Log($"[ExperimentController] Round {roundIndex} ended. Greentint (from dialogues) -> {tint:0.00}");
+            return;
+        }
+
+        // Fallback to your local steps if dialogues aren't ready / no valid value found
         if (greentintSteps == null || greentintSteps.Length == 0) return;
 
         tintIndex = (tintIndex + 1) % greentintSteps.Length;
         ApplyTintStep(tintIndex);
 
-        Debug.Log($"[ExperimentController] Round {roundIndex} ended. Greentint -> {greentintSteps[tintIndex]:0.00}");
+        dialogueIdText.text = LoginController.Instance.envId;
+
+        if (rc != null)
+            rc.SetLoggingIds(formId, dialogueId, LoginController.Instance.userId, LoginController.Instance.envId);
+
+        Debug.Log($"[ExperimentController] Round {roundIndex} ended. Greentint (fallback steps) -> {greentintSteps[tintIndex]:0.00}");
     }
 
     private void ApplyTintStep(int idx)
@@ -170,7 +220,7 @@ public class FormResponse
 {
     public string formId;
     public string userId;
-
+    public string type;
     public string tokens;
     public string tokenType;
     public bool isAnsCorrect;
@@ -217,7 +267,7 @@ public class FormResponse
 
     public List<string> objectDatas = new List<string>();
 
-    public static FormResponse NewEvent(string formId, string userId, string sessionId, string envId, string category, float elapsedSeconds)
+    public static FormResponse NewEvent(string formId, string userId, string sessionId, string envId, string category, float elapsedSeconds, string dialogueId)
     {
         return new FormResponse
         {
@@ -225,7 +275,8 @@ public class FormResponse
             userId = userId,
             sessionId = sessionId,
             envId = envId,
-            category = category,
+            type = category,
+            category = dialogueId,
             elapsedTime = elapsedSeconds.ToString("F3")
         };
     }

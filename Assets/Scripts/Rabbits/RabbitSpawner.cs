@@ -53,6 +53,8 @@ public class RabbitSpawner : MonoBehaviour
     [SerializeField] private string userId = "P001";
     [SerializeField] private string envId = "Terrain01";
     [SerializeField] private string sessionId = "";
+    [SerializeField] private string dialogueId = null;
+ 
 
     private readonly List<RabbitTarget> alive = new List<RabbitTarget>();
     private int hits = 0;
@@ -85,12 +87,12 @@ public class RabbitSpawner : MonoBehaviour
     /// <summary>
     /// Called by ExperimentController to configure IDs for logging.
     /// </summary>
-    public void SetLoggingIds(string _formId, string _userId, string _envId, string _sessionId)
+    public void SetLoggingIds(string _formId, string dialogueId, string userId, string envId)
     {
-        formId = _formId;
-        userId = _userId;
-        envId = _envId;
-        sessionId = _sessionId;
+        this.formId = _formId;
+        this.userId = userId;
+        this.envId = envId;
+        this.dialogueId = dialogueId;
     }
 
     // Starts the whole session (sessionDuration) with rounds of roundDuration
@@ -440,7 +442,7 @@ public class RabbitSpawner : MonoBehaviour
         Vector3 vp = mainCamera.WorldToViewportPoint(worldPos);
         float dist = Vector3.Distance(mainCamera.transform.position, worldPos);
 
-        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "spawn", elapsedSeconds);
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "spawn", elapsedSeconds, dialogueId);
         fr.battleId = currentRoundIndex.ToString();
         fr.interactableId = rabbit.RabbitId;
         fr.status = "ok";
@@ -474,7 +476,7 @@ public class RabbitSpawner : MonoBehaviour
         float timeFromSpawn = elapsedSeconds - rabbit.SpawnElapsedSeconds;
         if (timeFromSpawn < 0f) timeFromSpawn = 0f;
 
-        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "hit", elapsedSeconds);
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "hit", elapsedSeconds, dialogueId);
         fr.battleId = currentRoundIndex.ToString();
         fr.interactableId = rabbit.RabbitId;
         fr.isAnsCorrect = true;
@@ -501,7 +503,7 @@ public class RabbitSpawner : MonoBehaviour
 
     private void EmitSpawnFail(float elapsedSeconds)
     {
-        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "spawn_fail", elapsedSeconds);
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "spawn_fail", elapsedSeconds, dialogueId);
         fr.battleId = currentRoundIndex.ToString();
         fr.status = "failed_spawn";
         OnFormResponse?.Invoke(fr);
@@ -509,7 +511,7 @@ public class RabbitSpawner : MonoBehaviour
 
     private void EmitRoundEnd(float elapsedSeconds, int rabbitsPlannedThisRound)
     {
-        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "round_end", elapsedSeconds);
+        var fr = FormResponse.NewEvent(formId, userId, sessionId, envId, "round_end", elapsedSeconds, dialogueId);
         fr.battleId = currentRoundIndex.ToString();
         fr.status = "ok";
 
